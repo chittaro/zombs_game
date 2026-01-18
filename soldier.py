@@ -9,7 +9,7 @@ MAX_SPEED = 15
 SPEED = 2
 
 class Soldier():
-    def __init__(self, health: int, spawnPos: pygame.Vector2):
+    def __init__(self, hearts: int, spawnPos: pygame.Vector2):
         # sprite
         self.size = 50
         self.baseImage = pygame.image.load("assets/soldier_head.png").convert_alpha()
@@ -17,7 +17,7 @@ class Soldier():
         self.image = self.baseImage
 
         # traits
-        self.health = health
+        self.hearts = hearts
         self.shotTime = 0
 
         # movement
@@ -34,9 +34,17 @@ class Soldier():
 
 
 class Player(Soldier):
-    def __init__(self, health: int, spawnPos: pygame.Vector2):
+    def __init__(self, health: int, spawnPos: pygame.Vector2, audio):
         super().__init__(health, spawnPos)
         self.bullets = []
+        self.kills = 0
+        self.victory = False
+        self.audio = audio
+
+        audio.load("low_health", "low_health.mp3")
+        audio.load("shot", "shot.mp3")
+        audio.load("steps", "steps.mp3")
+        audio.load("damage", "damage.mp3")
 
     def updateSpeed(self, dir: tuple):
         for i in range(2):
@@ -55,7 +63,19 @@ class Player(Soldier):
         return False
     
     def shoot(self, mouse_pos):
+        self.audio.play("shot")
         self.bullets.append(Bullet(self.pos, mouse_pos - self.pos))
+
+    def damageTaken(self):
+        self.hearts -= 1
+        self.audio.play("damage")
+        if self.hearts == 1:
+            self.audio.play("low_health")
+
+    def getKill(self):
+        self.kills += 1
+        if self.kills >= 100:
+            self.victory = True
 
     def updateAndDrawBullets(self, screen: pygame.Surface):
         for i in range(len(self.bullets)-1, -1, -1):
@@ -71,7 +91,7 @@ class Player(Soldier):
         self.pos += self.vel
 
 
-class Enemy():
+class Zombie():
     size = 50
     speed = 4
 
@@ -79,68 +99,80 @@ class Enemy():
         self.pos = spawnPos
         self.rect = pygame.Rect(spawnPos, (self.size, self.size))
         self.vel = pygame.Vector2(0, 0)
+        self.baseImage = pygame.image.load("assets/zombie.png").convert_alpha()
+        self.baseImage = pygame.transform.scale(self.baseImage, (self.size, self.size))
+        self.image = self.baseImage
 
     def move(self, targetVec: pygame.Vector2):
         direction = targetVec - self.pos
+        angle = -math.degrees(math.atan2(direction.y, direction.x)) - 90
+        self.image = pygame.transform.rotate(self.baseImage, angle)
+
         targetVel = direction.normalize()
         targetVel.scale_to_length(self.speed)
         self.vel += ((targetVel - self.vel) * 0.1)
         self.pos += self.vel
+        self.rect.center = (round(self.pos.x), round(self.pos.y))
 
     def offscreen(self, screen: pygame.Surface):
         return not self.rect.colliderect(screen.get_rect())
 
     def draw(self, screen: pygame.Surface):
-        self.rect.center = (round(self.pos.x), round(self.pos.y))
-        pygame.draw.rect(screen, "pink", self.rect, self.size)
+        screen.blit(self.image, self.rect)
 
 
-class EnemySpawner():
-    maxEnemies = 5
-    enemies = []
+class ZombieSpawner():
+    maxZombies = 5
+    zombies = []
     lastSpawn = 0
-    spawnGap = 2
+    spawnGap = 1.5
 
-    def __init__(self, screenWid: int, screenHgt: int):
+    def __init__(self, screenWid: int, screenHgt: int, audio):
         self.maxX = screenWid
         self.maxY = screenHgt
+        self.audio = audio
+        self.audio.load("collision", "collision.mp3")
 
     def canSpawn(self):
-        return (len(self.enemies) < self.maxEnemies and
+        return (len(self.zombies) < self.maxZombies and
                 time.time() - self.lastSpawn > self.spawnGap)
 
     def spawn(self):
         if self.canSpawn():
             self.lastSpawn = time.time()
-            randX = (self.maxX + Enemy.size) * random.choice([-1, 1])
+            randX = (self.maxX + Zombie.size) * random.choice([-1, 1])
             randY = random.randint(0, self.maxY)
             randVec = pygame.Vector2(randX, randY)
-            self.enemies.append(Enemy(randVec))
+            self.zombies.append(Zombie(randVec))
 
-    def isCollision(self, player: Player):
-        for i in range(len(self.enemies)-1, -1, -1):
-            e: Enemy = self.enemies[i]
+    def playerCollisions(self, player: Player):
+        for i in range(len(self.zombies)-1, -1, -1):
+            e: Zombie = self.zombies[i]
             if e.rect.colliderect(player.getRect()):
-                return True
-        return False
+                player.damageTaken()
+                self.zombies.pop(i)
+                self.spawnGap -= 0.1
+                self.maxZombies += 1
     
-    def shotCollisions(self, bullets: list):
-        for i in range(len(bullets)-1, -1, -1):
-            b: Bullet = bullets[i]
-            for j in range(len(self.enemies)-1, -1, -1):
-                e: Enemy = self.enemies[j]
-                if e.rect.colliderect(b.rect):
-                    bullets.pop(i)
-                    self.enemies.pop(j)
+    def shotCollisions(self, player: Player):
+        for i in range(len(player.bullets)-1, -1, -1):
+            b: Bullet = player.bullets[i]
+            for j in range(len(self.zombies)-1, -1, -1):
+                z: Zombie = self.zombies[j]
+                if z.rect.colliderect(b.rect):
+                    player.bullets.pop(i)
+                    self.zombies.pop(j)
+                    self.audio.play("collision")
+                    player.getKill()
                     break
 
     def update(self, player: Player):
-        for e in self.enemies:
-            e.move(player.pos)
+        for z in self.zombies:
+            z.move(player.pos)
 
     def draw(self, screen: pygame.Surface):
-        for e in self.enemies:
-            e.draw(screen)
+        for z in self.zombies:
+            z.draw(screen)
 
 class Bullet():
     def __init__(self, spawnPos: pygame.Vector2, dirVec: pygame.Vector2):
