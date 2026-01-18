@@ -4,7 +4,7 @@ from soldier import Soldier, Player
 
 pygame.init()
 wwid = 1280
-whgt = 720
+whgt = 1020
 center = (round(wwid/2), round(whgt/2))
 screen = pygame.display.set_mode((wwid, whgt))
 clock = pygame.time.Clock()
@@ -39,9 +39,10 @@ while running:
         player.shoot(mouse_pos)
 
     # update screen
-    screen.fill("purple")
-
-    player.move(screen)
+    screen.fill((67, 102, 63))
+    
+    player.move()
+    player.updateAndDrawBullets(screen)
     player.draw(screen)
 
     pygame.display.flip()
