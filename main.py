@@ -1,5 +1,6 @@
 import pygame
-from soldier import Soldier, Player
+import time
+from soldier import Player, EnemySpawner
 
 
 pygame.init()
@@ -12,7 +13,10 @@ running = True
 
 player = Player(10, pygame.Vector2(center))
 
+enemySpawner = EnemySpawner(wwid, whgt)
+
 while running:
+    
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -31,22 +35,31 @@ while running:
     if keys[pygame.K_UP] or keys[pygame.K_w]:
         player.updateSpeed((0, -1))
 
-    # update player rotation
-    player.updateRot(mouse_pos)
-
     # update shooting
     if (pressed[0] and player.canShoot()):
         player.shoot(mouse_pos)
 
+    # update enemies
+    enemySpawner.spawn()
+    if enemySpawner.isCollision(player):
+        time.sleep(3)
+        break
+    enemySpawner.shotCollisions(player.bullets)
+    enemySpawner.update(player)
+
+    # update player
+    player.updateRot(mouse_pos)
+    player.move()
+
+
     # update screen
     screen.fill((67, 102, 63))
-    
-    player.move()
+
+    enemySpawner.draw(screen)
     player.updateAndDrawBullets(screen)
     player.draw(screen)
 
     pygame.display.flip()
-
     clock.tick(60)
 
 pygame.quit()

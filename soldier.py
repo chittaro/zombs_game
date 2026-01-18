@@ -2,6 +2,7 @@ import math
 import pygame
 import numpy as np
 import time
+import random
 
 FRICTION = 0.8
 MAX_SPEED = 15
@@ -23,11 +24,13 @@ class Soldier():
         self.vel = pygame.Vector2(0, 0)
         self.pos = spawnPos
 
-    def draw(self, screen: pygame.Surface):
+    def getRect(self):
         imageRect = self.image.get_rect()
         imageRect.center = (round(self.pos.x), round(self.pos.y))
-        screen.blit(self.image, imageRect)
+        return imageRect
 
+    def draw(self, screen: pygame.Surface):
+        screen.blit(self.image, self.getRect())
 
 
 class Player(Soldier):
@@ -50,12 +53,12 @@ class Player(Soldier):
             self.shotTime = time.time()
             return True
         return False
-
+    
     def shoot(self, mouse_pos):
         self.bullets.append(Bullet(self.pos, mouse_pos - self.pos))
 
     def updateAndDrawBullets(self, screen: pygame.Surface):
-        for i in range(len(self.bullets)-1, 0, -1):
+        for i in range(len(self.bullets)-1, -1, -1):
             b: Bullet = self.bullets[i]
             if (b.offscreen(screen)):
                 self.bullets.pop(i)
@@ -67,6 +70,77 @@ class Player(Soldier):
         self.vel = [FRICTION * a for a in self.vel]
         self.pos += self.vel
 
+
+class Enemy():
+    size = 50
+    speed = 4
+
+    def __init__(self, spawnPos: pygame.Vector2):
+        self.pos = spawnPos
+        self.rect = pygame.Rect(spawnPos, (self.size, self.size))
+        self.vel = pygame.Vector2(0, 0)
+
+    def move(self, targetVec: pygame.Vector2):
+        direction = targetVec - self.pos
+        targetVel = direction.normalize()
+        targetVel.scale_to_length(self.speed)
+        self.vel += ((targetVel - self.vel) * 0.1)
+        self.pos += self.vel
+
+    def offscreen(self, screen: pygame.Surface):
+        return not self.rect.colliderect(screen.get_rect())
+
+    def draw(self, screen: pygame.Surface):
+        self.rect.center = (round(self.pos.x), round(self.pos.y))
+        pygame.draw.rect(screen, "pink", self.rect, self.size)
+
+
+class EnemySpawner():
+    maxEnemies = 5
+    enemies = []
+    lastSpawn = 0
+    spawnGap = 2
+
+    def __init__(self, screenWid: int, screenHgt: int):
+        self.maxX = screenWid
+        self.maxY = screenHgt
+
+    def canSpawn(self):
+        return (len(self.enemies) < self.maxEnemies and
+                time.time() - self.lastSpawn > self.spawnGap)
+
+    def spawn(self):
+        if self.canSpawn():
+            self.lastSpawn = time.time()
+            randX = (self.maxX + Enemy.size) * random.choice([-1, 1])
+            randY = random.randint(0, self.maxY)
+            randVec = pygame.Vector2(randX, randY)
+            self.enemies.append(Enemy(randVec))
+
+    def isCollision(self, player: Player):
+        for i in range(len(self.enemies)-1, -1, -1):
+            e: Enemy = self.enemies[i]
+            if e.rect.colliderect(player.getRect()):
+                return True
+        return False
+    
+    def shotCollisions(self, bullets: list):
+        for i in range(len(bullets)-1, -1, -1):
+            b: Bullet = bullets[i]
+            for j in range(len(self.enemies)-1, -1, -1):
+                e: Enemy = self.enemies[j]
+                if e.rect.colliderect(b.rect):
+                    bullets.pop(i)
+                    self.enemies.pop(j)
+                    break
+
+    def update(self, player: Player):
+        for e in self.enemies:
+            e.move(player.pos)
+
+    def draw(self, screen: pygame.Surface):
+        for e in self.enemies:
+            e.draw(screen)
 
 class Bullet():
     def __init__(self, spawnPos: pygame.Vector2, dirVec: pygame.Vector2):
